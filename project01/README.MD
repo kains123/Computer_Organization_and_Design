@@ -36,8 +36,6 @@ There are 4 instruction formats (bit 0 is the least-significant bit).
 You should clone this repository.
 
 ```bash
-git clone https://github.com/kains123/
-bash
 cd project01
 ```
 
@@ -48,9 +46,11 @@ cd Assembler
 gcc assembler.c -o assembler
 ./assembler test/test1.as test/test1.mc
 
+* various err cases test!
+
 test2 > undefined label err!
 
-test3 > invalid arguments err!
+test3 >  unrecognized opcode err!
 
 test4 > line too long err!
 
@@ -59,9 +59,5 @@ test4 > line too long err!
 ```bash
 cd Simulator
 gcc simulator.c -o simulator
-
-gcc -o simulate simulator.c -lm
 ./simulator test/test1.mc > test/test1.as
 ```
-
-## Test cases

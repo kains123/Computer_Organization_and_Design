@@ -28,11 +28,10 @@ enum OpCode
 
 void printState(stateType *);
 
-/** Simulator Functions */
-void parseInst(stateType *statePtr, int *opcode, int *arg0, int *arg1, int *arg2);
-void RTypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int dest);
+void RTypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int destReg);
 void ITypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int offset);
 void JTypeInst(stateType *statePtr, int opcode, int arg0, int arg1);
+void parseInst(stateType *statePtr, int *opcode, int *arg0, int *arg1, int *arg2);
 
 int main(int argc, char *argv[])
 {
@@ -68,16 +67,16 @@ int main(int argc, char *argv[])
   printState(&state);
   while (1)
   {
-    int isHalt = 0;
     int opcode, arg0, arg1, arg2;
     parseInst(&state, &opcode, &arg0, &arg1, &arg2);
+    int isHalt = 0;
 
     state.pc++;
     executionCount++;
 
-    if (state.pc < 0 || state.pc >= NUMMEMORY)
+    if (state.pc >= NUMMEMORY || state.pc < 0 )
     {
-      printf("PC out of memory");
+      printf("!err! Out of memory");
       exit(1);
     }
 
@@ -99,7 +98,6 @@ int main(int argc, char *argv[])
       isHalt = 1;
       break;
     case OP_NOOP:
-      // just skip
       break;
     default:
       printf("Do not support its opcode.");
@@ -110,8 +108,6 @@ int main(int argc, char *argv[])
     {
       break;
     }
-
-    // Print state
     printState(&state);
   }
 
@@ -143,22 +139,21 @@ void printState(stateType *statePtr)
   printf("end state\n");
 }
 
-/*Register Valid Check*/
-int isValidReg(int reg)
+int convertSize(int num)
 {
-  return (int)(reg >= 0 && reg < NUMREGS);
-}
-
-
-int convertNum(int num)
-{
-  /* convert a 16-bit number into a 32-bit */
   if (num & (1 << 15))
   {
     num -= (1 << 16);
   }
 
   return (num);
+}
+
+
+/*Chec Register Validk*/
+int isValidReg(int reg)
+{
+  return (int)(reg >= 0 && reg < NUMREGS);
 }
 
 
@@ -172,17 +167,17 @@ void parseInst(stateType *statePtr, int *opcode, int *arg0, int *arg1, int *arg2
   *arg0 = (memValue >> 19) & 0b111;
   //18-16 bit  => binary to arg1
   *arg1 = (memValue >> 16) & 0b111;
-  //15-0 bit a =>binary to arg2
+  //15-0 bit a => binary to arg2
   *arg2 = (memValue & 0xFFFF);
 }
 
 /**
   OP_ADD, OP_NOR
  */
-void RTypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int dest)
+void RTypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int destReg)
 {
 
-  if (!isValidReg(arg0) || !isValidReg(arg1) || !isValidReg(dest))
+  if (!isValidReg(arg0) || !isValidReg(arg1) || !isValidReg(destReg))
   {
     printf("Register is not valid.");
     exit(1);
@@ -191,10 +186,10 @@ void RTypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int dest)
   switch (opcode)
   {
   case 0: // add
-    statePtr->reg[dest] = statePtr->reg[arg0] + statePtr->reg[arg1];
+    statePtr->reg[destReg] = statePtr->reg[arg0] + statePtr->reg[arg1];
     break;
   case 1: // nor
-    statePtr->reg[dest] = ~(statePtr->reg[arg0] | statePtr->reg[arg1]);
+    statePtr->reg[destReg] = ~(statePtr->reg[arg0] | statePtr->reg[arg1]);
     break;
   default:
     printf("Do not support its opcode");
@@ -203,38 +198,21 @@ void RTypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int dest)
   }
 }
 
-/**
- *
- * LW일 때는 (opcode 2)
- *
- * SW일 때는 (opcode 3)
- * Store arg1 into memory.
-
- *
- * BEQ일 때는 (opcode 4)
- *
- * Format
- * bits 24-22: opcode
- * bits 21-19: reg A
- * bits 18-16: reg B
- * bits 15-0: offsetField (a 16-bit, 2's complement number with a range of -32768 to 32767)
- */
+/* OP_LW, OP_SW, OP_BEQ */
 void ITypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int offset)
 {
-  offset = convertNum(offset);
-
-  if (!isValidReg(arg0) || !isValidReg(arg1))
-  {
-    printf("Register is not valid.");
-    exit(1);
-  }
+  offset = convertSize(offset);
 
   if (offset > 32767 || offset < -32768)
   {
-    printf("Offset out of range");
+    printf("!err! Offset out of range");
     exit(1);
   }
-
+  if (!isValidReg(arg0) || !isValidReg(arg1))
+  {
+    printf("!err! not valid Register");
+    exit(1);
+  }
   switch (opcode)
   {
   case 2:
@@ -256,7 +234,7 @@ void ITypeInst(stateType *statePtr, int opcode, int arg0, int arg1, int offset)
   }
 }
 
-/* JALR*/
+/* JALR */
 void JTypeInst(stateType *statePtr, int opcode, int arg0, int arg1)
 {
   if (!isValidReg(arg0) || !isValidReg(arg1))
