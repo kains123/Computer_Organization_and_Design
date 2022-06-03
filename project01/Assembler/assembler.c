@@ -15,16 +15,16 @@ int isNumber(const char *);
 void formatWrite(FILE *, FILE *);
 /* use this when return error */
 
-int findLabelAddress(const char *label);
+int findLabelAddr(const char *label);
 
 enum Error
 {
-  ERR,
+  ERR, //default
   ERR_UNDEFINED_LABEL,
   ERR_LACK_ARGUMENTS,
+  ERR_OVERFLOW,
   ERR_UNRECOGNIZED_OPCODE,
   ERR_ARGUMENT,
-  ERR_OVERFLOW,
 };
 
 /* use this when return error */
@@ -127,11 +127,13 @@ int main(int argc, char *argv[])
   labelTable.numAddrs = 0;
 
 
+  /*Read and parse a line of the assembly-language file. Fields are returned in label, opcode, arg0, arg1, arg2 (these strings must have memory already allocated to them). */
+
   for (curAddr = 0; readAndParse(inFilePtr, label, temp, temp, temp, temp); ++curAddr)
   {
       if (strlen(label) > 0)
       {
-          if (findLabelAddress(label) != -1)
+          if (findLabelAddr(label) != -1)
           {
               printf("!err! duplicate label\n");
               fclose(inFilePtr);
@@ -144,7 +146,6 @@ int main(int argc, char *argv[])
       }
   }
 
-    
   /* this is how to rewind the file ptr so that you start reading from the
   beginning of the file */
   rewind(inFilePtr);
@@ -161,7 +162,7 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
 {
     instType inst;
     stringType label, opcode, arg0, arg1, arg2;
-    int curAddr, temp, errArg;
+    int curAddr, temp, errArg; /* which arg err*/
 
     for (curAddr = 0; readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2); ++curAddr)
     {
@@ -181,7 +182,7 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
             {
                 temp = ERR_LACK_ARGUMENTS;
 
-                goto bad;
+                goto err;
             }
 
             if (isNumber(arg0))
@@ -190,19 +191,17 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
             }
             else
             {
-                if ((temp = findLabelAddress(arg0)) == -1)
+                if ((temp = findLabelAddr(arg0)) == -1)
                 {
                     temp = ERR_UNDEFINED_LABEL;
                     errArg = 0;
 
-                    goto bad;
+                    goto err;
                 }
 
                 fprintf(outFilePtr, "%d", temp);
             }
-        }
-        else
-        {
+        } else {
             if (strcmp(opcode, "add") == 0)
                 temp = RType(OP_ADD, curAddr, arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "nor") == 0)
@@ -222,8 +221,9 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
             else
                 temp = ERR_UNRECOGNIZED_OPCODE;
 
+                
             if (temp != ERR)
-                goto bad;
+                goto err;
 
             fprintf(outFilePtr, "%u", inst.code);
         }
@@ -231,7 +231,7 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
 
     return;
 
-bad:
+err:
     /*Error Checking*/
     if (temp == ERR_LACK_ARGUMENTS)
     {
@@ -299,9 +299,7 @@ int readAndParse(FILE *inFilePtr, char *label, char *opcode, char *arg0, char *a
   /* check for line too long (by looking for a \n) */
   if (strchr(line, '\n') == NULL)
   {
-    
     printf("!err! line too long\n");
-    
     exit(1);
   }
   /* is there a label? */
@@ -326,25 +324,11 @@ int isNumber(const char *string)
   return ((sscanf(string, "%d", &i)) == 1);
 }
 
-// return -1 if no consistent label.
-int checkRange(const char *string)
+int checkVal(const char *string)
 {
   int val = atoi(string);
 
   return (val < -32768) || (val > 32767) ;
-}
-
-// return -1 if no consistent label.
-int findLabelAddress(const char *label)
-{
-  int i;
-  for (i = 0; i < labelTable.numAddrs; ++i)
-  {
-    if (strcmp(label, labelTable.labels[i].label) == 0)
-      return labelTable.labels[i].addr;
-  }
-
-  return -1;
 }
 
 int labelOrImmediate(int labelOffset, const char *arg, enum Error *err)
@@ -356,7 +340,7 @@ int labelOrImmediate(int labelOffset, const char *arg, enum Error *err)
     return atoi(arg);
   }
 
-  if ((addr = findLabelAddress(arg)) == -1)
+  if ((addr = findLabelAddr(arg)) == -1)
   {
     *err = ERR_UNDEFINED_LABEL;
     return -1;
@@ -365,11 +349,21 @@ int labelOrImmediate(int labelOffset, const char *arg, enum Error *err)
   return addr - labelOffset;
 }
 
+int findLabelAddr(const char *label)
+{
+  int i;
+  for (i = 0; i < labelTable.numAddrs; ++i)
+  {
+    if (strcmp(label, labelTable.labels[i].label) == 0)
+      return labelTable.labels[i].addr;
+  }
+
+  return -1;
+}
+
+
 int RType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg)
 {
-  if (strlen(arg0) == 0 || strlen(arg1) == 0 || strlen(arg2) == 0)
-    return ERR_LACK_ARGUMENTS;
-
   if (!isNumber(arg0))
   {
     *errArg = 0;
@@ -388,6 +382,9 @@ int RType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, c
     return ERR_ARGUMENT;
   }
 
+  if (strlen(arg0) == 0 || strlen(arg1) == 0 || strlen(arg2) == 0)
+    return ERR_LACK_ARGUMENTS;
+
   inst->r.opcode = opcode;
   inst->r.regA = atoi(arg0);
   inst->r.regB = atoi(arg1);
@@ -403,8 +400,6 @@ int IType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, c
 
   enum Error err = ERR;
 
-  if (strlen(arg0) == 0 || strlen(arg1) == 0 || strlen(arg2) == 0)
-    return ERR_LACK_ARGUMENTS;
 
   if (!isNumber(arg0))
   {
@@ -418,11 +413,13 @@ int IType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, c
     return ERR_ARGUMENT;
   }
 
-  if (isNumber(arg2) && checkRange(arg2))
+  if (isNumber(arg2) && checkVal(arg2))
   {
     *errArg = 2;
     return ERR_OVERFLOW;
   }
+  if (strlen(arg0) == 0 || strlen(arg1) == 0 || strlen(arg2) == 0)
+    return ERR_LACK_ARGUMENTS;
 
   inst->i.opcode = opcode;
   inst->i.regA = atoi(arg0);
@@ -461,11 +458,12 @@ int JType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, c
   return ERR;
 }
 
+
+
+
+
 int OType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg)
 {
   inst->o.opcode = opcode;
-
   return ERR;
 }
-
-
