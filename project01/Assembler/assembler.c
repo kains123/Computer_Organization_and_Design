@@ -6,9 +6,17 @@
 
 #define MAX_INSTRUCTION 1024
 #define MAXLINELENGTH 1000
-typedef char string_t[MAX_LINE_LENGTH];
+typedef char stringType[MAXLINELENGTH];
 
+int readAndParse(FILE *, char *, char *, char *, char *, char *);
+int isNumber(const char *);
+
+
+void formatWrite(FILE *, FILE *);
 /* use this when return error */
+
+int findLabelAddress(const char *label);
+
 enum Error
 {
   ERR,
@@ -59,90 +67,222 @@ typedef union
     unsigned int unused0 : 7;
   } o;
 
-} inst_t;
+} instType;
 
 struct
 {
   struct
   {
-    string_t label;
+    stringType label;
     int addr;
   } labels[MAX_INSTRUCTION];
 
   int numAddrs;
 } labelTable;
 
+enum OpCode
+{
+  OP_ADD = 0b000,
+  OP_NOR = 0b001,
+  OP_LW = 0b010,
+  OP_SW = 0b011,
+  OP_BEQ = 0b100,
+  OP_JALR = 0b101,
+  OP_HALT = 0b110,
+  OP_NOOP = 0b111
+};
+
 /* formatting functions */
-int IType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg);
-int RType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg);
-int JType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg);
-int OType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg);
-
-/* new functions */
-int readAndParse(FILE *, char *, char *, char *, char *, char *);
-int isNumber(const char *);
-
-void procFirstPass(FILE *, FILE *);
-void procSecondPass(FILE *, FILE *);
-
-int getAddress(char *, int, char[NUMLABELS][LABELSIZE], int label_addy[]);
-int isUpper(char *);                                // if the character is uppercase, returns 1
-int isDef(char *, int, char[NUMLABELS][LABELSIZE]); // if the label is already defined, returns 1
+int IType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg);
+int RType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg);
+int JType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg);
+int OType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg);
 
 int main(int argc, char *argv[])
 {
   char *inFileString, *outFileString;
   FILE *inFilePtr, *outFilePtr;
+
   char label[MAXLINELENGTH], opcode[MAXLINELENGTH], arg0[MAXLINELENGTH],
-      arg1[MAXLINELENGTH], arg2[MAXLINELENGTH];
-  if (argc != 3)
+  arg1[MAXLINELENGTH], arg2[MAXLINELENGTH]; if (argc != 3) 
   {
     printf("error: usage: %s <assembly-code-file> <machine-code-file>\n", argv[0]);
-    exit(1);
+    exit(1); 
   }
-  inFileString = argv[1];
-  outFileString = argv[2];
-  inFilePtr = fopen(inFileString, "r");
-  if (inFilePtr == NULL)
-  {
+  
+  inFileString = argv[1]; outFileString = argv[2];
+  inFilePtr = fopen(inFileString, "r"); 
+  if (inFilePtr == NULL) {
     printf("error in opening %s\n", inFileString);
-    exit(1);
+    exit(1); 
   }
-  outFilePtr = fopen(outFileString, "w");
-  if (outFilePtr == NULL)
-  {
-    printf("error in opening %s\n", outFileString);
-    exit(1);
-  }
-
-  // number of instructions in the file(text, data, symbol, relocation)
-  int t = 0;
-  int d = 0;
-  int s = 0;
-  int r = 0;
-
-  // number of defined globals
-  int glob = 0;
-
-  // global labels
-  char defglobals[NUMLABELS][LABELSIZE]; // defined globals
-  char globals[NUMLABELS][LABELSIZE];    // all globals
-  char symbol[NUMLABELS][2];             // for all globals, the associated code of "T", "D", or "U"
-
-  int symbol_offset[NUMLABELS]; // the line offset from the start of the T/D sections
+  outFilePtr = fopen(outFileString, "w"); if (outFilePtr == NULL) {
+  printf("error in opening %s\n", outFileString);
+  exit(1); }
   /* here is an example for how to use readAndParse to read a line from inFilePtr */
-  if (!readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2))
-  { /* reached end of file */
+
+  stringType temp;
+  int curAddr;
+
+  labelTable.numAddrs = 0;
+
+
+  for (curAddr = 0; readAndParse(inFilePtr, label, temp, temp, temp, temp); ++curAddr)
+  {
+      if (strlen(label) > 0)
+      {
+          if (findLabelAddress(label) != -1)
+          {
+              printf("!err! duplicate label\n");
+              fclose(inFilePtr);
+              fclose(outFilePtr);
+              exit(1);
+          }
+          strncpy(labelTable.labels[labelTable.numAddrs].label, label, MAXLINELENGTH);
+          labelTable.labels[labelTable.numAddrs].addr = curAddr;
+          ++labelTable.numAddrs;
+      }
   }
+
+    
   /* this is how to rewind the file ptr so that you start reading from the
   beginning of the file */
   rewind(inFilePtr);
-  /* after doing a readAndParse, you may want to do the following to test the
-  opcode */
-  if (!strcmp(opcode, "add"))
-  {
-/* do whatever you need to do for opcode "add" */ }
-return (0);
+
+  /* do whatever you need to do for opcode "somthing" */
+  formatWrite(inFilePtr, outFilePtr);
+  fclose(inFilePtr);
+  fclose(outFilePtr);
+  return (0);
+}
+
+
+void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
+{
+    instType inst;
+    stringType label, opcode, arg0, arg1, arg2;
+    int curAddr, tempAddr, errArg;
+
+    for (curAddr = 0; readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2); ++curAddr)
+    {
+        if (curAddr)
+        {
+            fputc('\n', outFilePtr);
+        }
+
+        memset(&inst, 0, sizeof inst);
+        tempAddr = ERR;
+        errArg = -1;
+        /* after doing a readAndParse, you may want to do the following to test the opcode */
+        
+        if (strcmp(opcode, ".fill") == 0)
+        {
+            if (strlen(arg0) == 0)
+            {
+                tempAddr = ERR_LACK_ARGUMENTS;
+
+                goto bad;
+            }
+
+            if (isNumber(arg0))
+            {
+                fprintf(outFilePtr, "%d", atoi(arg0));
+            }
+            else
+            {
+                if ((tempAddr = findLabelAddress(arg0)) == -1)
+                {
+                    tempAddr = ERR_UNDEFINED_LABEL;
+                    errArg = 0;
+
+                    goto bad;
+                }
+
+                fprintf(outFilePtr, "%d", tempAddr);
+            }
+        }
+        else
+        {
+            if (strcmp(opcode, "add") == 0)
+                tempAddr = RType(OP_ADD, curAddr, arg0, arg1, arg2, &inst, &errArg);
+            else if (strcmp(opcode, "nor") == 0)
+                tempAddr = RType(OP_NOR, curAddr, arg0, arg1, arg2, &inst, &errArg);
+            else if (strcmp(opcode, "lw") == 0)
+                tempAddr = IType(OP_LW, curAddr, arg0, arg1, arg2, &inst, &errArg);
+            else if (strcmp(opcode, "sw") == 0)
+                tempAddr = IType(OP_SW, curAddr, arg0, arg1, arg2, &inst, &errArg);
+            else if (strcmp(opcode, "beq") == 0)
+                tempAddr = IType(OP_BEQ, curAddr, arg0, arg1, arg2, &inst, &errArg);
+            else if (strcmp(opcode, "jalr") == 0)
+                tempAddr = JType(OP_JALR,curAddr,  arg0, arg1, arg2, &inst, &errArg);
+            else if (strcmp(opcode, "halt") == 0)
+                tempAddr = OType(OP_HALT,curAddr,  arg0, arg1, arg2, &inst, &errArg);
+            else if (strcmp(opcode, "noop") == 0)
+                tempAddr = OType(OP_NOOP,curAddr,  arg0, arg1, arg2, &inst, &errArg);
+            else
+                tempAddr = ERR_UNRECOGNIZED_OPCODE;
+
+            if (tempAddr != ERR)
+                goto bad;
+
+            fprintf(outFilePtr, "%u", inst.code);
+        }
+    }
+
+    return;
+
+bad:
+    /*Error Checking*/
+    if (tempAddr == ERR_LACK_ARGUMENTS)
+    {
+        printf("!err! lack arguments\n");
+    }
+    else if (tempAddr == ERR_UNDEFINED_LABEL)
+    {
+        printf("!err! undefined label\n");
+        switch (errArg)
+        {
+        case 0:
+            printf("%s", arg0);
+            break;
+        case 1:
+            printf("%s", arg1);
+            break;
+        case 2:
+            printf("%s", arg2);
+            break;
+        }
+        printf("\n");
+    }
+    else if (tempAddr == ERR_LACK_ARGUMENTS)
+    {
+        printf("!err! lack argument\n");
+        switch (errArg)
+        {
+        case 0:
+            printf("%s", arg0);
+            break;
+        case 1:
+            printf("%s", arg1);
+            break;
+        case 2:
+            printf("%s", arg2);
+            break;
+        }
+        printf("\n");
+    }
+    else if (tempAddr == ERR_UNRECOGNIZED_OPCODE)
+    {
+        printf("!err! unrecognized opcode\n%s\n", opcode);
+    }
+    else if (tempAddr == ERR_OVERFLOW)
+    {
+        printf("!err! argument overflow\n");
+    }
+
+    fclose(inFilePtr);
+    fclose(outFilePtr);
+    exit(1);
 }
 
 /** * * * * * * * * */
@@ -158,7 +298,9 @@ int readAndParse(FILE *inFilePtr, char *label, char *opcode, char *arg0, char *a
   }
   /* check for line too long (by looking for a \n) */ if (strchr(line, '\n') == NULL)
   {
-    /* line too long */ printf("error: line too long\n");
+    
+    printf("!err! line too long\n");
+    
     exit(1);
   }
   /* is there a label? */
@@ -177,24 +319,18 @@ int readAndParse(FILE *inFilePtr, char *label, char *opcode, char *arg0, char *a
 }
 
 // return 1 if string is a number.
-int isNumber(char *string)
+int isNumber(const char *string)
 {
   int i;
   return ((sscanf(string, "%d", &i)) == 1);
 }
 
-// return 1 if string is a Alphabet.
-int isAlphabet(char *string)
-{
-  return (int)((*string >= 'a' && *string <= 'z') || (*string >= 'A' && *string <= 'Z'));
-}
-
 // return -1 if no consistent label.
-int checkOffsetRange(const char *string)
+int checkRange(const char *string)
 {
   int val = atoi(string);
 
-  return (val > 32767) || (val < -32768);
+  return (val < -32768) || (val > 32767) ;
 }
 
 // return -1 if no consistent label.
@@ -210,7 +346,7 @@ int findLabelAddress(const char *label)
   return -1;
 }
 
-int labelOrImmediate(int labelOffset, const char *arg, enum ErrorCode *err)
+int labelOrImmediate(int labelOffset, const char *arg, enum Error *err)
 {
   int addr;
 
@@ -228,27 +364,27 @@ int labelOrImmediate(int labelOffset, const char *arg, enum ErrorCode *err)
   return addr - labelOffset;
 }
 
-int RType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg)
+int RType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg)
 {
   if (strlen(arg0) == 0 || strlen(arg1) == 0 || strlen(arg2) == 0)
-    return ERR_NOT_ENOUGH_ARGUMENTS;
+    return ERR_LACK_ARGUMENTS;
 
   if (!isNumber(arg0))
   {
     *errArg = 0;
-    return ERR_INVALID_ARGUMENT;
+    return ERR_ARGUMENT;
   }
 
   if (!isNumber(arg1))
   {
     *errArg = 1;
-    return ERR_INVALID_ARGUMENT;
+    return ERR_ARGUMENT;
   }
 
   if (!isNumber(arg2))
   {
     *errArg = 2;
-    return ERR_INVALID_ARGUMENT;
+    return ERR_ARGUMENT;
   }
 
   inst->r.opcode = opcode;
@@ -256,35 +392,35 @@ int RType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, c
   inst->r.regB = atoi(arg1);
   inst->r.destReg = atoi(arg2);
 
-  return ERR_OK;
+  return ERR;
 }
 
-int IType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg)
+int IType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg)
 {
 
   int mc = 0, address = 0;
 
-  enum ErrorCode err = ERR_OK;
+  enum Error err = ERR;
 
   if (strlen(arg0) == 0 || strlen(arg1) == 0 || strlen(arg2) == 0)
-    return ERR_NOT_ENOUGH_ARGUMENTS;
+    return ERR_LACK_ARGUMENTS;
 
   if (!isNumber(arg0))
   {
     *errArg = 0;
-    return ERR_INVALID_ARGUMENT;
+    return ERR_ARGUMENT;
   }
 
   if (!isNumber(arg1))
   {
     *errArg = 1;
-    return ERR_INVALID_ARGUMENT;
+    return ERR_ARGUMENT;
   }
 
-  if (isNumber(arg2) && checkOffsetRange(arg2))
+  if (isNumber(arg2) && checkRange(arg2))
   {
     *errArg = 2;
-    return ERR_ARG_OVERFLOW;
+    return ERR_OVERFLOW;
   }
 
   inst->i.opcode = opcode;
@@ -293,40 +429,42 @@ int IType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, c
   inst->i.offset = labelOrImmediate((opcode == OP_BEQ ? curAddr + 1 : 0), arg2, &err);
 
   // maybe error is in arg2
-  if (err != ERR_OK)
+  if (err != ERR)
     *errArg = 2;
 
   return err;
 }
 
-int JType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg)
+int JType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg)
 {
 
   if (!isNumber(arg0))
   {
     *errArg = 0;
-    return ERR_INVALID_ARGUMENT;
+    return ERR_ARGUMENT;
   }
 
   if (!isNumber(arg1))
   {
     *errArg = 1;
-    return ERR_INVALID_ARGUMENT;
+    return ERR_ARGUMENT;
   }
 
   if (strlen(arg0) == 0 || strlen(arg1) == 0)
-    return ERR_NOT_ENOUGH_ARGUMENTS;
+    return ERR_LACK_ARGUMENTS;
 
   inst->j.opcode = opcode;
   inst->j.regA = atoi(arg0);
   inst->j.regB = atoi(arg1);
 
-  return ERR_OK;
+  return ERR;
 }
 
-int OType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, inst_t *inst, int *errArg)
+int OType(enum OpCode opcode, int curAddr, const char *arg0, const char *arg1, const char *arg2, instType *inst, int *errArg)
 {
   inst->o.opcode = opcode;
 
-  return ERR_OK;
+  return ERR;
 }
+
+
