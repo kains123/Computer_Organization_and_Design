@@ -161,7 +161,7 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
 {
     instType inst;
     stringType label, opcode, arg0, arg1, arg2;
-    int curAddr, tempAddr, errArg;
+    int curAddr, temp, errArg;
 
     for (curAddr = 0; readAndParse(inFilePtr, label, opcode, arg0, arg1, arg2); ++curAddr)
     {
@@ -171,7 +171,7 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
         }
 
         memset(&inst, 0, sizeof inst);
-        tempAddr = ERR;
+        temp = ERR;
         errArg = -1;
         /* after doing a readAndParse, you may want to do the following to test the opcode */
         
@@ -179,7 +179,7 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
         {
             if (strlen(arg0) == 0)
             {
-                tempAddr = ERR_LACK_ARGUMENTS;
+                temp = ERR_LACK_ARGUMENTS;
 
                 goto bad;
             }
@@ -190,39 +190,39 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
             }
             else
             {
-                if ((tempAddr = findLabelAddress(arg0)) == -1)
+                if ((temp = findLabelAddress(arg0)) == -1)
                 {
-                    tempAddr = ERR_UNDEFINED_LABEL;
+                    temp = ERR_UNDEFINED_LABEL;
                     errArg = 0;
 
                     goto bad;
                 }
 
-                fprintf(outFilePtr, "%d", tempAddr);
+                fprintf(outFilePtr, "%d", temp);
             }
         }
         else
         {
             if (strcmp(opcode, "add") == 0)
-                tempAddr = RType(OP_ADD, curAddr, arg0, arg1, arg2, &inst, &errArg);
+                temp = RType(OP_ADD, curAddr, arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "nor") == 0)
-                tempAddr = RType(OP_NOR, curAddr, arg0, arg1, arg2, &inst, &errArg);
+                temp = RType(OP_NOR, curAddr, arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "lw") == 0)
-                tempAddr = IType(OP_LW, curAddr, arg0, arg1, arg2, &inst, &errArg);
+                temp = IType(OP_LW, curAddr, arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "sw") == 0)
-                tempAddr = IType(OP_SW, curAddr, arg0, arg1, arg2, &inst, &errArg);
+                temp = IType(OP_SW, curAddr, arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "beq") == 0)
-                tempAddr = IType(OP_BEQ, curAddr, arg0, arg1, arg2, &inst, &errArg);
+                temp = IType(OP_BEQ, curAddr, arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "jalr") == 0)
-                tempAddr = JType(OP_JALR,curAddr,  arg0, arg1, arg2, &inst, &errArg);
+                temp = JType(OP_JALR,curAddr,  arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "halt") == 0)
-                tempAddr = OType(OP_HALT,curAddr,  arg0, arg1, arg2, &inst, &errArg);
+                temp = OType(OP_HALT,curAddr,  arg0, arg1, arg2, &inst, &errArg);
             else if (strcmp(opcode, "noop") == 0)
-                tempAddr = OType(OP_NOOP,curAddr,  arg0, arg1, arg2, &inst, &errArg);
+                temp = OType(OP_NOOP,curAddr,  arg0, arg1, arg2, &inst, &errArg);
             else
-                tempAddr = ERR_UNRECOGNIZED_OPCODE;
+                temp = ERR_UNRECOGNIZED_OPCODE;
 
-            if (tempAddr != ERR)
+            if (temp != ERR)
                 goto bad;
 
             fprintf(outFilePtr, "%u", inst.code);
@@ -233,11 +233,11 @@ void formatWrite(FILE *inFilePtr, FILE *outFilePtr)
 
 bad:
     /*Error Checking*/
-    if (tempAddr == ERR_LACK_ARGUMENTS)
+    if (temp == ERR_LACK_ARGUMENTS)
     {
         printf("!err! lack arguments\n");
     }
-    else if (tempAddr == ERR_UNDEFINED_LABEL)
+    else if (temp == ERR_UNDEFINED_LABEL)
     {
         printf("!err! undefined label\n");
         switch (errArg)
@@ -254,7 +254,7 @@ bad:
         }
         printf("\n");
     }
-    else if (tempAddr == ERR_LACK_ARGUMENTS)
+    else if (temp == ERR_LACK_ARGUMENTS)
     {
         printf("!err! lack argument\n");
         switch (errArg)
@@ -271,11 +271,11 @@ bad:
         }
         printf("\n");
     }
-    else if (tempAddr == ERR_UNRECOGNIZED_OPCODE)
+    else if (temp == ERR_UNRECOGNIZED_OPCODE)
     {
         printf("!err! unrecognized opcode\n%s\n", opcode);
     }
-    else if (tempAddr == ERR_OVERFLOW)
+    else if (temp == ERR_OVERFLOW)
     {
         printf("!err! argument overflow\n");
     }
@@ -296,7 +296,8 @@ int readAndParse(FILE *inFilePtr, char *label, char *opcode, char *arg0, char *a
   { /* reached end of file */
     return (0);
   }
-  /* check for line too long (by looking for a \n) */ if (strchr(line, '\n') == NULL)
+  /* check for line too long (by looking for a \n) */
+  if (strchr(line, '\n') == NULL)
   {
     
     printf("!err! line too long\n");
