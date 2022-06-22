@@ -3,10 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
-/* maximum number of data words in memory */
-#define NUM_MEMORY 65536 
-/* number of machine registers */
-#define NUM_REGS 8 
+#define NUMMEMORY 65536 /* maximum number of data words in memory */
+#define NUMREGS 8 /* number of machine registers */
 #define MAX_LINE_LENGTH 1000
 
 #define ADD 0
@@ -18,7 +16,7 @@
 #define HALT 6
 #define NOOP 7
 
-#define NOOP_INSTRUCTION 0x1c00000
+#define NOOPINSTRUCTION 0x1c00000
 
 typedef struct IFIDStruct {
     int instr;
@@ -52,9 +50,9 @@ typedef struct WBENDStruct {
 
 typedef struct stateStruct {
     int pc;
-    int instrMem[NUM_MEMORY];
-    int dataMem[NUM_MEMORY];
-    int reg[NUM_REGS];
+    int instrMem[NUMMEMORY];
+    int dataMem[NUMMEMORY];
+    int reg[NUMREGS];
     int numMemory;
     IFIDType IFID;
     IDEXType IDEX;
@@ -108,37 +106,42 @@ int main(int argc, char *argv[])
         printf("\t\tinstrMem[ %d ] ", i);
         printInstruction(state.instrMem[i]);
     }
+
+    /* initialize */
     state.cycles = 0;
     state.pc = 0;
-    for (i=0; i<NUM_REGS; i++) {
+    for (i=0; i<NUMREGS; i++) {
         state.reg[i] = 0;
     }
-    state.IFID.instr = NOOP_INSTRUCTION;
-    state.IDEX.instr = NOOP_INSTRUCTION;
-    state.EXMEM.instr = NOOP_INSTRUCTION;
-    state.MEMWB.instr = NOOP_INSTRUCTION;
-    state.WBEND.instr = NOOP_INSTRUCTION;
-  
+    state.IFID.instr = NOOPINSTRUCTION;
+    state.IDEX.instr = NOOPINSTRUCTION;
+    state.EXMEM.instr = NOOPINSTRUCTION;
+    state.MEMWB.instr = NOOPINSTRUCTION;
+    state.WBEND.instr = NOOPINSTRUCTION;
+    /* end of initialize */
+
     while (1) {
         
-        printState(&state);      
+        printState(&state);
         
+        /* check for halt */
         if (opcode(state.MEMWB.instr) == HALT) {
-            printf("total of %d cycles executed\n", state.cycles); printf("machine halted\n");
+            printf("machine halted\n");
+            printf("total of %d cycles executed\n", state.cycles);
             exit(0);
         }
 
         newState = state;
         newState.cycles++;
-        /* IFID */
 
+        /* --------------------- IF stage --------------------- */
+        /* increase PC + 1 */
         newState.IFID.instr = state.instrMem[state.pc];
         newState.IFID.pcPlus1 = state.pc + 1;
-
-        /* increase pc by 1. If branch, change pc value again in MEM stage. */
         newState.pc++;
 
-        /* ID stage */
+
+        /* --------------------- ID stage --------------------- */
         
         newState.IDEX.instr = state.IFID.instr;
         newState.IDEX.pcPlus1 = state.IFID.pcPlus1;
@@ -151,7 +154,7 @@ int main(int argc, char *argv[])
         if (opcode(state.IDEX.instr) == 2 && 
                 (field1(state.IDEX.instr) == field0(state.IFID.instr) 
                     || field1(state.IDEX.instr) == field1(state.IFID.instr))) {
-            newState.IDEX.instr = NOOP_INSTRUCTION;
+            newState.IDEX.instr = NOOPINSTRUCTION;
             newState.IDEX.offset = 0;
             newState.IDEX.pcPlus1 = 0;
             newState.IDEX.readRegA = 0;
@@ -159,7 +162,8 @@ int main(int argc, char *argv[])
             newState.pc = state.pc;
             newState.IFID = state.IFID;
         }
-        /* EX stage */
+
+        /* --------------------- EX stage --------------------- */
 
         aluInput0 = state.IDEX.readRegA;
         aluInput1 = state.IDEX.readRegB;
@@ -167,7 +171,9 @@ int main(int argc, char *argv[])
             aluInput1 = state.IDEX.offset;
         }
 
-        /* Data hazard */
+        /* Data hazard detection & forwarding */
+        /* FOR Rs */
+            /* if EX hazard */
             if (((opcode(state.EXMEM.instr) == 0 || opcode(state.EXMEM.instr) == 1) 
                     && field2(state.EXMEM.instr) != 0 && field2(state.EXMEM.instr) == field0(state.IDEX.instr))
                 || (opcode(state.EXMEM.instr) == 2 && field1(state.EXMEM.instr) != 0 
@@ -175,7 +181,7 @@ int main(int argc, char *argv[])
                 
                 aluInput0 = state.EXMEM.aluResult;
             }
-          
+            /* if MEM hazard no EX hazard */
             else if (((opcode(state.MEMWB.instr) == 0 || opcode(state.MEMWB.instr) == 1) 
                     && field2(state.MEMWB.instr) != 0 && field2(state.MEMWB.instr) == field0(state.IDEX.instr))
                 || (opcode(state.MEMWB.instr) == 2 && field1(state.MEMWB.instr) != 0 
@@ -191,8 +197,8 @@ int main(int argc, char *argv[])
                 
                 aluInput0 = state.WBEND.writeData;
             }
-        /* FOR Rt */
-            
+            /* FOR Rt (lecture) */
+            /* if EX hazard */
             if (((opcode(state.EXMEM.instr) == 0 || opcode(state.EXMEM.instr) == 1) 
                     && field2(state.EXMEM.instr) != 0 && field2(state.EXMEM.instr) == field1(state.IDEX.instr))
                 || (opcode(state.EXMEM.instr) == 2 && field1(state.EXMEM.instr) != 0 
@@ -200,7 +206,7 @@ int main(int argc, char *argv[])
                 
                 aluInput1 = state.EXMEM.aluResult;
             }
-            
+            /* if MEM hazard no EX hazard */
             else if (((opcode(state.MEMWB.instr) == 0 || opcode(state.MEMWB.instr) == 1) 
                     && field2(state.MEMWB.instr) != 0 && field2(state.MEMWB.instr) == field1(state.IDEX.instr))
                 || (opcode(state.MEMWB.instr) == 2 && field1(state.MEMWB.instr) != 0 
@@ -208,7 +214,7 @@ int main(int argc, char *argv[])
                 
                 aluInput1 = state.MEMWB.writeData;
             }
-        
+            /* if WB hazard no EX, MEM hazard */
             else if (((opcode(state.WBEND.instr) == 0 || opcode(state.WBEND.instr) == 1) 
                     && field2(state.WBEND.instr) != 0 && field2(state.WBEND.instr) == field1(state.IDEX.instr))
                 || (opcode(state.WBEND.instr) == 2 && field1(state.WBEND.instr) != 0 
@@ -216,13 +222,12 @@ int main(int argc, char *argv[])
                 
                 aluInput1 = state.WBEND.writeData;
             }
-       //ALU
 
 
+        /* ALU */
         switch (opcode(state.IDEX.instr)) {
-        
-        case 0:
         /* add */
+        case 0:
             newState.EXMEM.aluResult = aluInput0 + aluInput1;
             break;
         /* nor */
@@ -242,12 +247,13 @@ int main(int argc, char *argv[])
         newState.EXMEM.instr = state.IDEX.instr;
         newState.EXMEM.readRegB = state.IDEX.readRegB;
         newState.EXMEM.branchTarget = state.IDEX.pcPlus1 + state.IDEX.offset;
-        /*  MEM stage  */
+        
+        /* --------------------- MEM stage --------------------- */
 
         newState.MEMWB.instr = state.EXMEM.instr;
 
         switch (opcode(state.EXMEM.instr)) {
-
+        /* INT : add, nor */
         case 0:
         case 1:
             newState.MEMWB.writeData = state.EXMEM.aluResult;
@@ -264,21 +270,21 @@ int main(int argc, char *argv[])
         case 4:
             if(state.EXMEM.aluResult == 0) {
                 newState.pc = state.EXMEM.branchTarget;
-                newState.EXMEM.instr = NOOP_INSTRUCTION;
+                newState.EXMEM.instr = NOOPINSTRUCTION;
                 newState.EXMEM.branchTarget = 0;
                 newState.EXMEM.aluResult = 0;
                 newState.EXMEM.readRegB = 0;
-                newState.IDEX.instr = NOOP_INSTRUCTION;
+                newState.IDEX.instr = NOOPINSTRUCTION;
                 newState.IDEX.offset = 0;
                 newState.IDEX.pcPlus1 = 0;
                 newState.IDEX.readRegA = 0;
                 newState.IDEX.readRegB = 0;
-                newState.IFID.instr = NOOP_INSTRUCTION;
+                newState.IFID.instr = NOOPINSTRUCTION;
                 newState.IFID.pcPlus1 = 0;
             }
         }
 
-        /* WB stage */
+        /* --------------------- WB stage --------------------- */
 
         /* lw */
         if (opcode(state.MEMWB.instr) == 2) {
@@ -294,15 +300,15 @@ int main(int argc, char *argv[])
 
         
 
-        state = newState;
+        state = newState; /* this is the last statement before end of the loop.
+                            It marks the end of the cycle and updates the
+                            current state with the values calculated in this cycle */
     }
-
+    /* end of run() */
     return(0);
 }
 
-void
-printState(stateType *statePtr)
-{
+void printState(stateType *statePtr) {
     int i;
     printf("\n@@@\nstate before cycle %d starts\n", statePtr->cycles);
     printf("\tpc %d\n", statePtr->pc);
@@ -312,7 +318,7 @@ printState(stateType *statePtr)
             printf("\t\tdataMem[ %d ] %d\n", i, statePtr->dataMem[i]);
         }
     printf("\tregisters:\n");
-        for (i=0; i<NUM_REGS; i++) {
+        for (i=0; i<NUMREGS; i++) {
             printf("\t\treg[ %d ] %d\n", i, statePtr->reg[i]);
         }
     printf("\tIFID:\n");
@@ -343,15 +349,26 @@ printState(stateType *statePtr)
 }
 
 int field0(int instruction)
-{ return( (instruction>>19) & 0x7); }
-int field1(int instruction)
-{ return( (instruction>>16) & 0x7); }
-int field2(int instruction)
-{ return(instruction & 0xFFFF); }
-int opcode(int instruction)
-{  return(instruction>>22);}
-void printInstruction(int instr)
 {
+    return( (instruction>>19) & 0x7);
+}
+
+int field1(int instruction)
+{
+    return( (instruction>>16) & 0x7);
+}
+
+int field2(int instruction)
+{
+    return(instruction & 0xFFFF);
+}
+
+int opcode(int instruction)
+{
+    return(instruction>>22);
+}
+
+void printInstruction(int instr) {
     char opcodeString[10];
 
     if (opcode(instr) == ADD) {
@@ -377,8 +394,8 @@ void printInstruction(int instr)
                 field2(instr));
 }
 
-int convertNum(int num)
-{
+/* convert a 16-bit number into a 32-bit */
+int convertNum(int num) {
     if (num & (1<<15) ) {
         num -= (1<<16);
     }
